@@ -1,8 +1,13 @@
 #include <jni.h>
 
+#include <android/log.h>
 #include <string>
 
+#include "qnn_loader.h"
+
 namespace {
+
+constexpr char kLogTag[] = "NativeQnnBridge";
 
 jstring ToJString(JNIEnv* env, const std::string& value) {
     return env->NewStringUTF(value.c_str());
@@ -43,12 +48,36 @@ Java_com_kjache_runtime_NativeQnnBridge_nativePrepareQnnSession(
     const std::string backend_path = FromJString(env, backend_library_path);
     const std::string skel_dir = FromJString(env, skel_library_dir);
 
-    const std::string detail =
-        "Native bridge received QNN paths.\n"
-        "Delegate: " + delegate_path + "\n"
-        "Backend: " + backend_path + "\n"
-        "Skel dir: " + skel_dir + "\n"
-        "Attach not implemented yet.";
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kLogTag,
+        "nativePrepareQnnSession delegate=%s backend=%s skelDir=%s",
+        delegate_path.c_str(),
+        backend_path.c_str(),
+        skel_dir.c_str());
 
-    return ToJString(env, detail);
+    const QnnLoadResult result = TryLoadQnnLibraries(delegate_path, backend_path, skel_dir);
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kLogTag,
+        "nativePrepareQnnSession attached=%d failureReason=%s delegateHandle=%lld detail=%s",
+        result.attached ? 1 : 0,
+        result.failure_reason.c_str(),
+        result.delegate_handle,
+        result.detail.c_str());
+    const std::string payload =
+        std::string(result.attached ? "true" : "false") + "|" +
+        result.failure_reason + "|" +
+        std::to_string(result.delegate_handle) + "|" +
+        result.detail;
+
+    return ToJString(env, payload);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_kjache_runtime_NativeQnnBridge_nativeDestroyDelegate(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jlong delegate_handle) {
+    DestroyDelegateHandle(static_cast<long long>(delegate_handle));
 }

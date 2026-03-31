@@ -1,6 +1,7 @@
 package com.kjache.runtime
 
 import android.content.Context
+import android.util.Log
 import com.kjache.backend_qnn.QnnBackendAdapter
 
 class RuntimeEngine(
@@ -8,6 +9,7 @@ class RuntimeEngine(
 ) {
     private val qnnBackendAdapter = QnnBackendAdapter(appContext)
     private val nativeQnnBridge = NativeQnnBridge()
+    private val tfliteQnnAttachTester = TfliteQnnAttachTester(appContext)
 
     fun createSession(options: SessionOptions = SessionOptions()): InferenceSession {
         val backendInfo = createBackendInfo(options)
@@ -17,6 +19,7 @@ class RuntimeEngine(
 
     private fun createBackendInfo(options: SessionOptions): BackendInfo {
         if (!options.preferQnn) {
+            Log.i(TAG, "QNN preference disabled. Creating CPU-only session.")
             return BackendInfo(
                 selectedBackend = BackendId.CPU,
                 usedFallback = false,
@@ -29,6 +32,7 @@ class RuntimeEngine(
 
         val qnnConfig = options.qnnConfig
         if (qnnConfig == null) {
+            Log.w(TAG, "QNN config missing. Falling back according to session options.")
             return createUnavailableBackendInfo(
                 options = options,
                 message = "QNN config is missing. Configure assets before attempting QNN.",
@@ -45,11 +49,27 @@ class RuntimeEngine(
             backendLibraryName = qnnConfig.backendLibraryName,
             skelAssetSubDir = qnnConfig.skelAssetSubDir
         )
+        Log.i(
+            TAG,
+            "QNN probe result available=${probeResult.available} " +
+                "delegate=${probeResult.delegateLibraryPath} backend=${probeResult.backendLibraryPath} " +
+                "skelDir=${probeResult.skelLibraryDir} reason=${probeResult.reason}"
+        )
         if (probeResult.available) {
-            val nativeResult = nativeQnnBridge.prepareQnnSession(
+            val preparedNativeResult = nativeQnnBridge.prepareQnnSession(
                 delegateLibraryPath = requireNotNull(probeResult.delegateLibraryPath),
                 backendLibraryPath = requireNotNull(probeResult.backendLibraryPath),
                 skelLibraryDir = requireNotNull(probeResult.skelLibraryDir)
+            )
+            val nativeResult = tfliteQnnAttachTester.tryAttach(
+                modelAssetName = qnnConfig.testModelAssetName,
+                nativeBridge = nativeQnnBridge,
+                nativeResult = preparedNativeResult
+            )
+            Log.i(
+                TAG,
+                "Native attach outcome attached=${nativeResult.attached} " +
+                    "failureReason=${nativeResult.failureReason} delegateHandle=${nativeResult.delegateHandle}"
             )
 
             if (nativeResult.attached) {
@@ -60,15 +80,15 @@ class RuntimeEngine(
                     qnnPrepared = true,
                     nativeAttachAttempted = nativeResult.attempted,
                     nativeAttachSucceeded = true,
-                    message = buildPreparedMessage(probeResult) + "\n" + nativeResult.detail
+                    message = buildPreparedMessage(probeResult, qnnConfig.testModelAssetName) + "\n" + nativeResult.detail
                 )
             }
 
             return createUnavailableBackendInfo(
                 options = options,
-                message = buildPreparedMessage(probeResult) + "\n" + nativeResult.detail,
+                message = buildPreparedMessage(probeResult, qnnConfig.testModelAssetName) + "\n" + nativeResult.detail,
                 qnnPrepared = true,
-                failureReason = FailureReason.DELEGATE_ATTACH_FAILED,
+                failureReason = nativeResult.failureReason ?: FailureReason.DELEGATE_ATTACH_FAILED,
                 nativeAttachAttempted = nativeResult.attempted,
                 nativeAttachSucceeded = false
             )
@@ -118,10 +138,18 @@ class RuntimeEngine(
         )
     }
 
-    private fun buildPreparedMessage(probeResult: com.kjache.backend_qnn.QnnProbeResult): String {
+    private fun buildPreparedMessage(
+        probeResult: com.kjache.backend_qnn.QnnProbeResult,
+        modelAssetName: String
+    ): String {
         return "QNN assets prepared.\n" +
             "Delegate: ${probeResult.delegateLibraryPath}\n" +
             "Backend: ${probeResult.backendLibraryPath}\n" +
-            "Skel dir: ${probeResult.skelLibraryDir}"
+            "Skel dir: ${probeResult.skelLibraryDir}\n" +
+            "Model asset: $modelAssetName"
+    }
+
+    companion object {
+        private const val TAG = "RuntimeEngine"
     }
 }

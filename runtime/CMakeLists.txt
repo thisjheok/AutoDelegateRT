@@ -6,6 +6,7 @@ add_library(
     runtime_native
     SHARED
     src/main/cpp/native_qnn_bridge.cpp
+    src/main/cpp/qnn_loader.cpp
 )
 
 find_library(
