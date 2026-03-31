@@ -1,17 +1,23 @@
 package com.kjache.backend_qnn
 
-class QnnBackendAdapter(
-    private val availabilityChecker: QnnAvailabilityChecker = QnnAvailabilityChecker()
-) {
-    fun probe(): QnnProbeResult {
-        val available = availabilityChecker.isQnnAvailable()
-        if (available) {
-            return QnnProbeResult(available = true)
-        }
+import android.content.Context
 
-        return QnnProbeResult(
-            available = false,
-            reason = availabilityChecker.unavailableReason()
+class QnnBackendAdapter(
+    appContext: Context
+) {
+    private val availabilityChecker = QnnAvailabilityChecker(QnnAssetInstaller(appContext))
+
+    fun probe(
+        assetBaseDir: String,
+        delegateLibraryName: String,
+        backendLibraryName: String,
+        skelAssetSubDir: String
+    ): QnnProbeResult {
+        return availabilityChecker.check(
+            assetBaseDir = assetBaseDir,
+            delegateLibraryName = delegateLibraryName,
+            backendLibraryName = backendLibraryName,
+            skelAssetSubDir = skelAssetSubDir
         )
     }
 }

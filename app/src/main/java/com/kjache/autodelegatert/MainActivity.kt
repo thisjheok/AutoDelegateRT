@@ -12,18 +12,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.kjache.autodelegatert.ui.theme.AutoDelegateRTTheme
+import com.kjache.runtime.QnnConfig
 import com.kjache.runtime.RuntimeEngine
+import com.kjache.runtime.SessionOptions
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val engine = RuntimeEngine()
-        val session = engine.createSession()
+        val engine = RuntimeEngine(applicationContext)
+        val session = engine.createSession(
+            SessionOptions(
+                qnnConfig = QnnConfig()
+            )
+        )
         val backendInfo = session.backendInfo()
         val backendSummary =
             "Selected backend: ${backendInfo.selectedBackend.name}\n" +
                 "Attempted backend: ${backendInfo.attemptedBackend?.name ?: "NONE"}\n" +
                 "Fallback used: ${backendInfo.usedFallback}\n" +
+                "QNN prepared: ${backendInfo.qnnPrepared}\n" +
                 "Failure reason: ${backendInfo.failureReason?.name ?: "NONE"}\n" +
                 backendInfo.message
 
@@ -57,8 +64,9 @@ fun GreetingPreview() {
             "Selected backend: CPU\n" +
                 "Attempted backend: QNN_HTP\n" +
                 "Fallback used: true\n" +
+                "QNN prepared: false\n" +
                 "Failure reason: QNN_NOT_AVAILABLE\n" +
-                "QNN delegate attempt failed, so the session fell back to CPU."
+                "Missing QNN delegate asset: qnn/libQnnTFLiteDelegate.so"
         )
     }
 }

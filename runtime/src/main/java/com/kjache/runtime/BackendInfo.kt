@@ -5,5 +5,6 @@ data class BackendInfo(
     val usedFallback: Boolean,
     val attemptedBackend: BackendId? = null,
     val failureReason: FailureReason? = null,
+    val qnnPrepared: Boolean = false,
     val message: String
 )
