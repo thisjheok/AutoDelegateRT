@@ -7,6 +7,7 @@ class RuntimeEngine(
     private val appContext: Context
 ) {
     private val qnnBackendAdapter = QnnBackendAdapter(appContext)
+    private val nativeQnnBridge = NativeQnnBridge()
 
     fun createSession(options: SessionOptions = SessionOptions()): InferenceSession {
         val backendInfo = createBackendInfo(options)
@@ -20,7 +21,9 @@ class RuntimeEngine(
                 selectedBackend = BackendId.CPU,
                 usedFallback = false,
                 qnnPrepared = false,
-                message = "CPU session created without attempting QNN."
+                nativeAttachAttempted = false,
+                nativeAttachSucceeded = false,
+                message = "CPU session created without attempting QNN.\nBridge: ${nativeQnnBridge.bridgeStatus()}"
             )
         }
 
@@ -28,7 +31,11 @@ class RuntimeEngine(
         if (qnnConfig == null) {
             return createUnavailableBackendInfo(
                 options = options,
-                message = "QNN config is missing. Configure assets before attempting QNN."
+                message = "QNN config is missing. Configure assets before attempting QNN.",
+                qnnPrepared = false,
+                failureReason = FailureReason.QNN_NOT_AVAILABLE,
+                nativeAttachAttempted = false,
+                nativeAttachSucceeded = false
             )
         }
 
@@ -39,33 +46,62 @@ class RuntimeEngine(
             skelAssetSubDir = qnnConfig.skelAssetSubDir
         )
         if (probeResult.available) {
-            return BackendInfo(
-                selectedBackend = BackendId.QNN_HTP,
-                usedFallback = false,
-                attemptedBackend = BackendId.QNN_HTP,
+            val nativeResult = nativeQnnBridge.prepareQnnSession(
+                delegateLibraryPath = requireNotNull(probeResult.delegateLibraryPath),
+                backendLibraryPath = requireNotNull(probeResult.backendLibraryPath),
+                skelLibraryDir = requireNotNull(probeResult.skelLibraryDir)
+            )
+
+            if (nativeResult.attached) {
+                return BackendInfo(
+                    selectedBackend = BackendId.QNN_HTP,
+                    usedFallback = false,
+                    attemptedBackend = BackendId.QNN_HTP,
+                    qnnPrepared = true,
+                    nativeAttachAttempted = nativeResult.attempted,
+                    nativeAttachSucceeded = true,
+                    message = buildPreparedMessage(probeResult) + "\n" + nativeResult.detail
+                )
+            }
+
+            return createUnavailableBackendInfo(
+                options = options,
+                message = buildPreparedMessage(probeResult) + "\n" + nativeResult.detail,
                 qnnPrepared = true,
-                message = buildPreparedMessage(probeResult)
+                failureReason = FailureReason.DELEGATE_ATTACH_FAILED,
+                nativeAttachAttempted = nativeResult.attempted,
+                nativeAttachSucceeded = false
             )
         }
 
         return createUnavailableBackendInfo(
             options = options,
             message = probeResult.reason
-                ?: "QNN delegate attempt failed, so the session fell back to CPU."
+                ?: "QNN delegate attempt failed, so the session fell back to CPU.",
+            qnnPrepared = false,
+            failureReason = FailureReason.QNN_NOT_AVAILABLE,
+            nativeAttachAttempted = false,
+            nativeAttachSucceeded = false
         )
     }
 
     private fun createUnavailableBackendInfo(
         options: SessionOptions,
-        message: String
+        message: String,
+        qnnPrepared: Boolean,
+        failureReason: FailureReason,
+        nativeAttachAttempted: Boolean,
+        nativeAttachSucceeded: Boolean
     ): BackendInfo {
         if (options.allowCpuFallback) {
             return BackendInfo(
                 selectedBackend = BackendId.CPU,
                 usedFallback = true,
                 attemptedBackend = BackendId.QNN_HTP,
-                failureReason = FailureReason.QNN_NOT_AVAILABLE,
-                qnnPrepared = false,
+                failureReason = failureReason,
+                qnnPrepared = qnnPrepared,
+                nativeAttachAttempted = nativeAttachAttempted,
+                nativeAttachSucceeded = nativeAttachSucceeded,
                 message = message
             )
         }
@@ -74,8 +110,10 @@ class RuntimeEngine(
             selectedBackend = BackendId.QNN_HTP,
             usedFallback = false,
             attemptedBackend = BackendId.QNN_HTP,
-            failureReason = FailureReason.QNN_NOT_AVAILABLE,
-            qnnPrepared = false,
+            failureReason = failureReason,
+            qnnPrepared = qnnPrepared,
+            nativeAttachAttempted = nativeAttachAttempted,
+            nativeAttachSucceeded = nativeAttachSucceeded,
             message = message
         )
     }

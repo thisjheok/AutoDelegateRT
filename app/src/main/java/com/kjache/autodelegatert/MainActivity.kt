@@ -31,6 +31,8 @@ class MainActivity : ComponentActivity() {
                 "Attempted backend: ${backendInfo.attemptedBackend?.name ?: "NONE"}\n" +
                 "Fallback used: ${backendInfo.usedFallback}\n" +
                 "QNN prepared: ${backendInfo.qnnPrepared}\n" +
+                "Native attach attempted: ${backendInfo.nativeAttachAttempted}\n" +
+                "Native attach succeeded: ${backendInfo.nativeAttachSucceeded}\n" +
                 "Failure reason: ${backendInfo.failureReason?.name ?: "NONE"}\n" +
                 backendInfo.message
 
@@ -64,9 +66,11 @@ fun GreetingPreview() {
             "Selected backend: CPU\n" +
                 "Attempted backend: QNN_HTP\n" +
                 "Fallback used: true\n" +
-                "QNN prepared: false\n" +
-                "Failure reason: QNN_NOT_AVAILABLE\n" +
-                "Missing QNN delegate asset: qnn/libQnnTFLiteDelegate.so"
+                "QNN prepared: true\n" +
+                "Native attach attempted: true\n" +
+                "Native attach succeeded: false\n" +
+                "Failure reason: DELEGATE_ATTACH_FAILED\n" +
+                "QNN assets prepared."
         )
     }
 }
