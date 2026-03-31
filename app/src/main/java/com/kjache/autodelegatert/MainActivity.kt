@@ -22,7 +22,9 @@ class MainActivity : ComponentActivity() {
         val backendInfo = session.backendInfo()
         val backendSummary =
             "Selected backend: ${backendInfo.selectedBackend.name}\n" +
+                "Attempted backend: ${backendInfo.attemptedBackend?.name ?: "NONE"}\n" +
                 "Fallback used: ${backendInfo.usedFallback}\n" +
+                "Failure reason: ${backendInfo.failureReason?.name ?: "NONE"}\n" +
                 backendInfo.message
 
         enableEdgeToEdge()
@@ -51,6 +53,12 @@ fun Greeting(backendSummary: String, modifier: Modifier = Modifier) {
 @Composable
 fun GreetingPreview() {
     AutoDelegateRTTheme {
-        Greeting("Selected backend: CPU\nFallback used: false\nCPU baseline session created.")
+        Greeting(
+            "Selected backend: CPU\n" +
+                "Attempted backend: QNN_HTP\n" +
+                "Fallback used: true\n" +
+                "Failure reason: QNN_NOT_AVAILABLE\n" +
+                "QNN delegate attempt failed, so the session fell back to CPU."
+        )
     }
 }
