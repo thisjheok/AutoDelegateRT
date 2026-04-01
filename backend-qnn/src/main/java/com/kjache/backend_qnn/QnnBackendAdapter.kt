@@ -12,6 +12,7 @@ class QnnBackendAdapter(
         delegateLibraryName: String,
         backendLibraryName: String,
         skelAssetSubDir: String,
+        preloadLibraryNames: List<String>,
         preferPackagedNativeLibraries: Boolean
     ): QnnProbeResult {
         return availabilityChecker.check(
@@ -19,6 +20,7 @@ class QnnBackendAdapter(
             delegateLibraryName = delegateLibraryName,
             backendLibraryName = backendLibraryName,
             skelAssetSubDir = skelAssetSubDir,
+            preloadLibraryNames = preloadLibraryNames,
             preferPackagedNativeLibraries = preferPackagedNativeLibraries
         )
     }

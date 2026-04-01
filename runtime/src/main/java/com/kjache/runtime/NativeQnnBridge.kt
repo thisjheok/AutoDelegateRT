@@ -8,17 +8,20 @@ class NativeQnnBridge {
     fun prepareQnnSession(
         delegateLibraryPath: String,
         backendLibraryPath: String,
-        skelLibraryDir: String
+        skelLibraryDir: String,
+        preloadLibraryPaths: List<String>
     ): NativeQnnSessionResult {
         Log.i(
             TAG,
             "Attempting native QNN session setup " +
-                "delegate=$delegateLibraryPath backend=$backendLibraryPath skelDir=$skelLibraryDir"
+                "delegate=$delegateLibraryPath backend=$backendLibraryPath skelDir=$skelLibraryDir " +
+                "preload=$preloadLibraryPaths"
         )
         val detail = nativePrepareQnnSession(
             delegateLibraryPath = delegateLibraryPath,
             backendLibraryPath = backendLibraryPath,
-            skelLibraryDir = skelLibraryDir
+            skelLibraryDir = skelLibraryDir,
+            preloadLibraryPaths = preloadLibraryPaths.toTypedArray()
         )
 
         val parts = detail.split("|", limit = 4)
@@ -54,7 +57,8 @@ class NativeQnnBridge {
     private external fun nativePrepareQnnSession(
         delegateLibraryPath: String,
         backendLibraryPath: String,
-        skelLibraryDir: String
+        skelLibraryDir: String,
+        preloadLibraryPaths: Array<String>
     ): String
 
     private external fun nativeDestroyDelegate(delegateHandle: Long)

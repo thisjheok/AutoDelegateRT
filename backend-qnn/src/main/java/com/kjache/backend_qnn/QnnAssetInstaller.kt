@@ -13,6 +13,7 @@ class QnnAssetInstaller(
         delegateLibraryName: String,
         backendLibraryName: String,
         skelAssetSubDir: String,
+        preloadLibraryNames: List<String>,
         preferPackagedNativeLibraries: Boolean
     ): QnnPreparedAssets? {
         val skelAssetPath = buildAssetPath(assetBaseDir, skelAssetSubDir)
@@ -66,10 +67,19 @@ class QnnAssetInstaller(
             nativeLibraryDir
         } ?: return null
 
+        val preloadLibraryPaths = preloadLibraryNames.mapNotNull { libraryName ->
+            resolveOptionalLibrary(
+                assetBaseDir = assetBaseDir,
+                libraryName = libraryName,
+                preferPackagedNativeLibraries = preferPackagedNativeLibraries
+            )
+        }
+
         return QnnPreparedAssets(
             delegateLibraryPath = delegateTarget.loadTarget,
             backendLibraryPath = backendTarget.loadTarget,
             skelLibraryDir = skelDir.absolutePath,
+            preloadLibraryPaths = preloadLibraryPaths,
             usingPackagedNativeLibraries = preferPackagedNativeLibraries
         )
     }
@@ -124,6 +134,30 @@ class QnnAssetInstaller(
         return if (base.isEmpty()) child else "$base/$child"
     }
 
+    private fun resolveOptionalLibrary(
+        assetBaseDir: String,
+        libraryName: String,
+        preferPackagedNativeLibraries: Boolean
+    ): String? {
+        if (preferPackagedNativeLibraries) {
+            return resolvePackagedLibrary(libraryName)?.loadTarget ?: libraryName
+        }
+
+        val candidateAssetPaths = listOf(
+            buildAssetPath(assetBaseDir, libraryName),
+            libraryName
+        )
+        val selectedAssetPath = candidateAssetPaths.firstOrNull(::assetExists) ?: return null
+        val installRoot = File(appContext.filesDir, assetBaseDir)
+        if (!installRoot.exists()) {
+            installRoot.mkdirs()
+        }
+        return copyAssetToFile(
+            selectedAssetPath,
+            File(installRoot, libraryName)
+        ).absolutePath
+    }
+
     private fun resolvePackagedLibrary(libraryName: String): PackagedLibraryTarget? {
         val nativeLibraryDir = nativeLibraryDirPath()?.let(::File)
         val extractedFile = nativeLibraryDir?.let { File(it, libraryName) }?.takeIf { it.exists() }
@@ -176,6 +210,7 @@ data class QnnPreparedAssets(
     val delegateLibraryPath: String,
     val backendLibraryPath: String,
     val skelLibraryDir: String,
+    val preloadLibraryPaths: List<String>,
     val usingPackagedNativeLibraries: Boolean
 )
 

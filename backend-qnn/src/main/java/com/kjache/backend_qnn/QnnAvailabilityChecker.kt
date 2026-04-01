@@ -8,6 +8,7 @@ class QnnAvailabilityChecker(
         delegateLibraryName: String,
         backendLibraryName: String,
         skelAssetSubDir: String,
+        preloadLibraryNames: List<String>,
         preferPackagedNativeLibraries: Boolean
     ): QnnProbeResult {
         val preparedAssets = assetInstaller.prepareAssets(
@@ -15,12 +16,14 @@ class QnnAvailabilityChecker(
             delegateLibraryName = delegateLibraryName,
             backendLibraryName = backendLibraryName,
             skelAssetSubDir = skelAssetSubDir,
+            preloadLibraryNames = preloadLibraryNames,
             preferPackagedNativeLibraries = preferPackagedNativeLibraries
         ) ?: return buildUnavailableResult(
             assetBaseDir = assetBaseDir,
             delegateLibraryName = delegateLibraryName,
             backendLibraryName = backendLibraryName,
             skelAssetSubDir = skelAssetSubDir,
+            preloadLibraryNames = preloadLibraryNames,
             preferPackagedNativeLibraries = preferPackagedNativeLibraries
         )
 
@@ -29,6 +32,7 @@ class QnnAvailabilityChecker(
             delegateLibraryPath = preparedAssets.delegateLibraryPath,
             backendLibraryPath = preparedAssets.backendLibraryPath,
             skelLibraryDir = preparedAssets.skelLibraryDir,
+            preloadLibraryPaths = preparedAssets.preloadLibraryPaths,
             usingPackagedNativeLibraries = preparedAssets.usingPackagedNativeLibraries
         )
     }
@@ -38,6 +42,7 @@ class QnnAvailabilityChecker(
         delegateLibraryName: String,
         backendLibraryName: String,
         skelAssetSubDir: String,
+        preloadLibraryNames: List<String>,
         preferPackagedNativeLibraries: Boolean
     ): QnnProbeResult {
         val delegateAssetPath = buildAssetPath(assetBaseDir, delegateLibraryName)

@@ -6,5 +6,6 @@ data class QnnProbeResult(
     val delegateLibraryPath: String? = null,
     val backendLibraryPath: String? = null,
     val skelLibraryDir: String? = null,
+    val preloadLibraryPaths: List<String> = emptyList(),
     val usingPackagedNativeLibraries: Boolean = false
 )
