@@ -2,6 +2,7 @@
 #define AUTO_DELEGATE_RT_QNN_LOADER_H_
 
 #include <string>
+#include <vector>
 
 struct QnnLoadResult {
     bool attached = false;
@@ -13,7 +14,8 @@ struct QnnLoadResult {
 QnnLoadResult TryLoadQnnLibraries(
     const std::string& delegate_path,
     const std::string& backend_path,
-    const std::string& skel_dir);
+    const std::string& skel_dir,
+    const std::vector<std::string>& preload_libraries);
 
 void DestroyDelegateHandle(long long delegate_handle);
 

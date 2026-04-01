@@ -2,6 +2,7 @@
 
 #include <android/log.h>
 #include <string>
+#include <vector>
 
 #include "qnn_loader.h"
 
@@ -28,6 +29,22 @@ std::string FromJString(JNIEnv* env, jstring value) {
     return result;
 }
 
+std::vector<std::string> FromJStringArray(JNIEnv* env, jobjectArray values) {
+    std::vector<std::string> result;
+    if (values == nullptr) {
+        return result;
+    }
+
+    const jsize length = env->GetArrayLength(values);
+    result.reserve(static_cast<std::size_t>(length));
+    for (jsize index = 0; index < length; ++index) {
+        auto value = static_cast<jstring>(env->GetObjectArrayElement(values, index));
+        result.push_back(FromJString(env, value));
+        env->DeleteLocalRef(value);
+    }
+    return result;
+}
+
 }  // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -43,20 +60,28 @@ Java_com_kjache_runtime_NativeQnnBridge_nativePrepareQnnSession(
     jobject /* this */,
     jstring delegate_library_path,
     jstring backend_library_path,
-    jstring skel_library_dir) {
+    jstring skel_library_dir,
+    jobjectArray preload_library_paths) {
     const std::string delegate_path = FromJString(env, delegate_library_path);
     const std::string backend_path = FromJString(env, backend_library_path);
     const std::string skel_dir = FromJString(env, skel_library_dir);
+    const std::vector<std::string> preload_paths = FromJStringArray(env, preload_library_paths);
 
     __android_log_print(
         ANDROID_LOG_INFO,
         kLogTag,
-        "nativePrepareQnnSession delegate=%s backend=%s skelDir=%s",
+        "nativePrepareQnnSession delegate=%s backend=%s skelDir=%s preloadCount=%zu",
         delegate_path.c_str(),
         backend_path.c_str(),
-        skel_dir.c_str());
+        skel_dir.c_str(),
+        preload_paths.size());
 
-    const QnnLoadResult result = TryLoadQnnLibraries(delegate_path, backend_path, skel_dir);
+    const QnnLoadResult result = TryLoadQnnLibraries(
+        delegate_path,
+        backend_path,
+        skel_dir,
+        preload_paths
+    );
     __android_log_print(
         ANDROID_LOG_INFO,
         kLogTag,

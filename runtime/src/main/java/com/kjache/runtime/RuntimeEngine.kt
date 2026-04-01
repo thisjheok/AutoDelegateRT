@@ -48,19 +48,22 @@ class RuntimeEngine(
             delegateLibraryName = qnnConfig.delegateLibraryName,
             backendLibraryName = qnnConfig.backendLibraryName,
             skelAssetSubDir = qnnConfig.skelAssetSubDir,
+            preloadLibraryNames = qnnConfig.preloadLibraryNames,
             preferPackagedNativeLibraries = qnnConfig.preferPackagedNativeLibraries
         )
         Log.i(
             TAG,
             "QNN probe result available=${probeResult.available} " +
                 "delegate=${probeResult.delegateLibraryPath} backend=${probeResult.backendLibraryPath} " +
-                "skelDir=${probeResult.skelLibraryDir} reason=${probeResult.reason}"
+                "skelDir=${probeResult.skelLibraryDir} preload=${probeResult.preloadLibraryPaths} " +
+                "reason=${probeResult.reason}"
         )
         if (probeResult.available) {
             val preparedNativeResult = nativeQnnBridge.prepareQnnSession(
                 delegateLibraryPath = requireNotNull(probeResult.delegateLibraryPath),
                 backendLibraryPath = requireNotNull(probeResult.backendLibraryPath),
-                skelLibraryDir = requireNotNull(probeResult.skelLibraryDir)
+                skelLibraryDir = requireNotNull(probeResult.skelLibraryDir),
+                preloadLibraryPaths = probeResult.preloadLibraryPaths
             )
             val nativeResult = tfliteQnnAttachTester.tryAttach(
                 modelAssetName = qnnConfig.testModelAssetName,
@@ -153,6 +156,7 @@ class RuntimeEngine(
             "Delegate: ${probeResult.delegateLibraryPath}\n" +
             "Backend: ${probeResult.backendLibraryPath}\n" +
             "Skel dir: ${probeResult.skelLibraryDir}\n" +
+            "Preload libs: ${probeResult.preloadLibraryPaths.joinToString()}\n" +
             "Model asset: $modelAssetName"
     }
 

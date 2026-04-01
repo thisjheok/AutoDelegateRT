@@ -7,8 +7,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <unordered_map>
+#include <vector>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -24,6 +26,7 @@ using DestroyDelegateFn = void (*)(void* delegate);
 struct DelegateRegistryEntry {
     void* library_handle = nullptr;
     void* backend_library_handle = nullptr;
+    std::vector<void*> dependency_handles;
     void* delegate_handle = nullptr;
     DestroyDelegateFn destroy_fn = nullptr;
 };
@@ -104,22 +107,68 @@ void ConfigureRuntimeEnvironment(const std::string& backend_path, const std::str
         ld_path_value.c_str());
 }
 
+std::vector<void*> PreloadLibraries(const std::vector<std::string>& preload_libraries, std::ostringstream& detail) {
+    std::vector<void*> handles;
+    handles.reserve(preload_libraries.size());
+
+    for (const auto& library : preload_libraries) {
+        if (library.empty()) {
+            continue;
+        }
+
+        dlerror();
+        void* handle = dlopen(library.c_str(), RTLD_NOW | RTLD_GLOBAL);
+        if (handle == nullptr) {
+            const std::string error = DlopenErrorOrFallback(library);
+            __android_log_print(
+                ANDROID_LOG_WARN,
+                kLogTag,
+                "Failed to preload dependency %s: %s",
+                library.c_str(),
+                error.c_str());
+            detail << "Preload failed: " << library << " -> " << error << "\n";
+            continue;
+        }
+
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            kLogTag,
+            "Preloaded dependency %s",
+            library.c_str());
+        detail << "Preloaded dependency: " << library << "\n";
+        handles.push_back(handle);
+    }
+
+    return handles;
+}
+
+void CloseHandles(const std::vector<void*>& handles) {
+    for (void* handle : handles) {
+        if (handle != nullptr) {
+            dlclose(handle);
+        }
+    }
+}
+
 }  // namespace
 
 QnnLoadResult TryLoadQnnLibraries(
     const std::string& delegate_path,
     const std::string& backend_path,
-    const std::string& skel_dir) {
+    const std::string& skel_dir,
+    const std::vector<std::string>& preload_libraries) {
     QnnLoadResult result;
+    std::ostringstream preload_detail;
 
     __android_log_print(
         ANDROID_LOG_INFO,
         kLogTag,
-        "TryLoadQnnLibraries delegate=%s backend=%s skelDir=%s packaged=%d",
+        "TryLoadQnnLibraries delegate=%s backend=%s skelDir=%s packaged=%d preloadCount=%zu",
         delegate_path.c_str(),
         backend_path.c_str(),
         skel_dir.c_str(),
-        IsLibraryNameOnly(delegate_path) && IsLibraryNameOnly(backend_path) ? 1 : 0);
+        IsLibraryNameOnly(delegate_path) && IsLibraryNameOnly(backend_path) ? 1 : 0,
+        preload_libraries.size());
 
     const bool packaged_libraries =
         IsLibraryNameOnly(delegate_path) && IsLibraryNameOnly(backend_path);
@@ -146,6 +195,7 @@ QnnLoadResult TryLoadQnnLibraries(
     }
 
     ConfigureRuntimeEnvironment(backend_path, skel_dir);
+    std::vector<void*> dependency_handles = PreloadLibraries(preload_libraries, preload_detail);
 
     dlerror();
     void* backend_handle = dlopen(backend_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
@@ -153,6 +203,7 @@ QnnLoadResult TryLoadQnnLibraries(
         result.failure_reason = "BACKEND_LIBRARY_LOAD_FAILED";
         result.detail = "Failed to load backend library: " + DlopenErrorOrFallback(backend_path);
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
+        CloseHandles(dependency_handles);
         return result;
     }
 
@@ -163,6 +214,7 @@ QnnLoadResult TryLoadQnnLibraries(
         result.detail = "Failed to load delegate library: " + DlopenErrorOrFallback(delegate_path);
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
         dlclose(backend_handle);
+        CloseHandles(dependency_handles);
         return result;
     }
 
@@ -175,6 +227,7 @@ QnnLoadResult TryLoadQnnLibraries(
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
         dlclose(delegate_handle);
         dlclose(backend_handle);
+        CloseHandles(dependency_handles);
         return result;
     }
 
@@ -187,6 +240,7 @@ QnnLoadResult TryLoadQnnLibraries(
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
         dlclose(delegate_handle);
         dlclose(backend_handle);
+        CloseHandles(dependency_handles);
         return result;
     }
 
@@ -207,6 +261,7 @@ QnnLoadResult TryLoadQnnLibraries(
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
         dlclose(delegate_handle);
         dlclose(backend_handle);
+        CloseHandles(dependency_handles);
         return result;
     }
 
@@ -215,6 +270,7 @@ QnnLoadResult TryLoadQnnLibraries(
            << "Delegate: " << delegate_path << "\n"
            << "Backend: " << backend_path << "\n"
            << "Skel dir: " << skel_dir << "\n"
+           << preload_detail.str()
            << "Delegate handle: " << created_delegate;
 
     result.attached = false;
@@ -226,6 +282,7 @@ QnnLoadResult TryLoadQnnLibraries(
     DelegateRegistry()[result.delegate_handle] = DelegateRegistryEntry{
         .library_handle = delegate_handle,
         .backend_library_handle = backend_handle,
+        .dependency_handles = std::move(dependency_handles),
         .delegate_handle = created_delegate,
         .destroy_fn = destroy_delegate
     };
@@ -249,5 +306,6 @@ void DestroyDelegateHandle(long long delegate_handle) {
     if (found->second.backend_library_handle != nullptr) {
         dlclose(found->second.backend_library_handle);
     }
+    CloseHandles(found->second.dependency_handles);
     registry.erase(found);
 }
