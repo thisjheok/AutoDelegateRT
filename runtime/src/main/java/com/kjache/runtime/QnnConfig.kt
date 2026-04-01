@@ -5,5 +5,6 @@ data class QnnConfig(
     val delegateLibraryName: String = "libQnnTFLiteDelegate.so",
     val backendLibraryName: String = "libQnnHtp.so",
     val skelAssetSubDir: String = "adsp",
+    val preferPackagedNativeLibraries: Boolean = true,
     val testModelAssetName: String = "yolov8n_seg_int8.tflite"
 )

@@ -11,13 +11,15 @@ class QnnBackendAdapter(
         assetBaseDir: String,
         delegateLibraryName: String,
         backendLibraryName: String,
-        skelAssetSubDir: String
+        skelAssetSubDir: String,
+        preferPackagedNativeLibraries: Boolean
     ): QnnProbeResult {
         return availabilityChecker.check(
             assetBaseDir = assetBaseDir,
             delegateLibraryName = delegateLibraryName,
             backendLibraryName = backendLibraryName,
-            skelAssetSubDir = skelAssetSubDir
+            skelAssetSubDir = skelAssetSubDir,
+            preferPackagedNativeLibraries = preferPackagedNativeLibraries
         )
     }
 }

@@ -47,7 +47,8 @@ class RuntimeEngine(
             assetBaseDir = qnnConfig.assetBaseDir,
             delegateLibraryName = qnnConfig.delegateLibraryName,
             backendLibraryName = qnnConfig.backendLibraryName,
-            skelAssetSubDir = qnnConfig.skelAssetSubDir
+            skelAssetSubDir = qnnConfig.skelAssetSubDir,
+            preferPackagedNativeLibraries = qnnConfig.preferPackagedNativeLibraries
         )
         Log.i(
             TAG,
@@ -142,7 +143,13 @@ class RuntimeEngine(
         probeResult: com.kjache.backend_qnn.QnnProbeResult,
         modelAssetName: String
     ): String {
-        return "QNN assets prepared.\n" +
+        val librarySource = if (probeResult.usingPackagedNativeLibraries) {
+            "packaged jniLibs/APK native libs"
+        } else {
+            "copied assets"
+        }
+        return "QNN libraries prepared.\n" +
+            "Library source: $librarySource\n" +
             "Delegate: ${probeResult.delegateLibraryPath}\n" +
             "Backend: ${probeResult.backendLibraryPath}\n" +
             "Skel dir: ${probeResult.skelLibraryDir}\n" +

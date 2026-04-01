@@ -5,5 +5,6 @@ data class QnnProbeResult(
     val reason: String? = null,
     val delegateLibraryPath: String? = null,
     val backendLibraryPath: String? = null,
-    val skelLibraryDir: String? = null
+    val skelLibraryDir: String? = null,
+    val usingPackagedNativeLibraries: Boolean = false
 )

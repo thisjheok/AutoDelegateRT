@@ -23,6 +23,7 @@ using DestroyDelegateFn = void (*)(void* delegate);
 
 struct DelegateRegistryEntry {
     void* library_handle = nullptr;
+    void* backend_library_handle = nullptr;
     void* delegate_handle = nullptr;
     DestroyDelegateFn destroy_fn = nullptr;
 };
@@ -40,6 +41,10 @@ bool PathExists(const std::string& path) {
 bool DirectoryHasEntries(const std::string& path) {
     struct stat info {};
     return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR) != 0;
+}
+
+bool IsLibraryNameOnly(const std::string& value) {
+    return value.find('/') == std::string::npos;
 }
 
 std::string DlopenErrorOrFallback(const std::string& fallback) {
@@ -65,22 +70,29 @@ std::string ParentDirectory(const std::string& path) {
 }
 
 void ConfigureRuntimeEnvironment(const std::string& backend_path, const std::string& skel_dir) {
-    setenv("ADSP_LIBRARY_PATH", skel_dir.c_str(), 1);
-    __android_log_print(
-        ANDROID_LOG_INFO,
-        kLogTag,
-        "Set ADSP_LIBRARY_PATH=%s",
-        skel_dir.c_str());
+    if (!skel_dir.empty()) {
+        setenv("ADSP_LIBRARY_PATH", skel_dir.c_str(), 1);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            kLogTag,
+            "Set ADSP_LIBRARY_PATH=%s",
+            skel_dir.c_str());
+    }
 
     const std::string backend_dir = ParentDirectory(backend_path);
     const char* current_ld = getenv("LD_LIBRARY_PATH");
     std::ostringstream ld_path;
-    ld_path << backend_dir;
+    if (!backend_dir.empty()) {
+        ld_path << backend_dir;
+    }
     if (!backend_dir.empty() && backend_dir != skel_dir) {
         ld_path << ":" << skel_dir;
     }
     if (current_ld != nullptr && std::strlen(current_ld) > 0) {
-        ld_path << ":" << current_ld;
+        if (ld_path.tellp() > 0) {
+            ld_path << ":";
+        }
+        ld_path << current_ld;
     }
 
     const std::string ld_path_value = ld_path.str();
@@ -103,26 +115,30 @@ QnnLoadResult TryLoadQnnLibraries(
     __android_log_print(
         ANDROID_LOG_INFO,
         kLogTag,
-        "TryLoadQnnLibraries delegate=%s backend=%s skelDir=%s",
+        "TryLoadQnnLibraries delegate=%s backend=%s skelDir=%s packaged=%d",
         delegate_path.c_str(),
         backend_path.c_str(),
-        skel_dir.c_str());
+        skel_dir.c_str(),
+        IsLibraryNameOnly(delegate_path) && IsLibraryNameOnly(backend_path) ? 1 : 0);
 
-    if (!DirectoryHasEntries(skel_dir)) {
+    const bool packaged_libraries =
+        IsLibraryNameOnly(delegate_path) && IsLibraryNameOnly(backend_path);
+
+    if (!packaged_libraries && !DirectoryHasEntries(skel_dir)) {
         result.failure_reason = "SKELETON_LIBRARY_MISSING";
         result.detail = "Skel directory is missing or inaccessible: " + skel_dir;
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
         return result;
     }
 
-    if (!PathExists(delegate_path)) {
+    if (!packaged_libraries && !PathExists(delegate_path)) {
         result.failure_reason = "DELEGATE_LIBRARY_LOAD_FAILED";
         result.detail = "Delegate library path does not exist: " + delegate_path;
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
         return result;
     }
 
-    if (!PathExists(backend_path)) {
+    if (!packaged_libraries && !PathExists(backend_path)) {
         result.failure_reason = "BACKEND_LIBRARY_LOAD_FAILED";
         result.detail = "Backend library path does not exist: " + backend_path;
         __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", result.detail.c_str());
@@ -132,7 +148,7 @@ QnnLoadResult TryLoadQnnLibraries(
     ConfigureRuntimeEnvironment(backend_path, skel_dir);
 
     dlerror();
-    void* backend_handle = dlopen(backend_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void* backend_handle = dlopen(backend_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (backend_handle == nullptr) {
         result.failure_reason = "BACKEND_LIBRARY_LOAD_FAILED";
         result.detail = "Failed to load backend library: " + DlopenErrorOrFallback(backend_path);
@@ -141,7 +157,7 @@ QnnLoadResult TryLoadQnnLibraries(
     }
 
     dlerror();
-    void* delegate_handle = dlopen(delegate_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void* delegate_handle = dlopen(delegate_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (delegate_handle == nullptr) {
         result.failure_reason = "DELEGATE_LIBRARY_LOAD_FAILED";
         result.detail = "Failed to load delegate library: " + DlopenErrorOrFallback(delegate_path);
@@ -174,8 +190,6 @@ QnnLoadResult TryLoadQnnLibraries(
         return result;
     }
 
-    std::string backend_option = "backend_type:htp;library_path:" + backend_path +
-        ";skel_library_dir:" + skel_dir + ";";
     const char* keys[] = {"backend_type", "library_path", "skel_library_dir"};
     char backend_type_value[] = "htp";
     std::string backend_path_mutable = backend_path;
@@ -211,6 +225,7 @@ QnnLoadResult TryLoadQnnLibraries(
 
     DelegateRegistry()[result.delegate_handle] = DelegateRegistryEntry{
         .library_handle = delegate_handle,
+        .backend_library_handle = backend_handle,
         .delegate_handle = created_delegate,
         .destroy_fn = destroy_delegate
     };
@@ -230,6 +245,9 @@ void DestroyDelegateHandle(long long delegate_handle) {
     }
     if (found->second.library_handle != nullptr) {
         dlclose(found->second.library_handle);
+    }
+    if (found->second.backend_library_handle != nullptr) {
+        dlclose(found->second.backend_library_handle);
     }
     registry.erase(found);
 }

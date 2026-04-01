@@ -1,2 +1,3 @@
 /build
 /src/main/assets/qnn/
+/src/main/jniLibs/arm64-v8a/

@@ -1,7 +1,9 @@
 package com.kjache.backend_qnn
 
 import android.content.Context
+import android.os.Build
 import java.io.File
+import java.util.zip.ZipFile
 
 class QnnAssetInstaller(
     private val appContext: Context
@@ -10,39 +12,79 @@ class QnnAssetInstaller(
         assetBaseDir: String,
         delegateLibraryName: String,
         backendLibraryName: String,
-        skelAssetSubDir: String
+        skelAssetSubDir: String,
+        preferPackagedNativeLibraries: Boolean
     ): QnnPreparedAssets? {
-        val delegateAssetPath = buildAssetPath(assetBaseDir, delegateLibraryName)
-        val backendAssetPath = buildAssetPath(assetBaseDir, backendLibraryName)
         val skelAssetPath = buildAssetPath(assetBaseDir, skelAssetSubDir)
+        val nativeLibraryDir = nativeLibraryDirPath()?.let(::File)
 
-        if (!assetExists(delegateAssetPath)) {
-            return null
-        }
-        if (!assetExists(backendAssetPath)) {
-            return null
-        }
+        val delegateTarget = if (preferPackagedNativeLibraries) {
+            resolvePackagedLibrary(delegateLibraryName)
+        } else {
+            val delegateAssetPath = buildAssetPath(assetBaseDir, delegateLibraryName)
+            if (!assetExists(delegateAssetPath)) {
+                return null
+            }
+            val installRoot = File(appContext.filesDir, assetBaseDir)
+            if (!installRoot.exists()) {
+                installRoot.mkdirs()
+            }
+            PackagedLibraryTarget(
+                loadTarget = copyAssetToFile(
+                    delegateAssetPath,
+                    File(installRoot, delegateLibraryName)
+                ).absolutePath
+            )
+        } ?: return null
 
-        val installRoot = File(appContext.filesDir, assetBaseDir)
-        if (!installRoot.exists()) {
-            installRoot.mkdirs()
-        }
+        val backendTarget = if (preferPackagedNativeLibraries) {
+            resolvePackagedLibrary(backendLibraryName)
+        } else {
+            val backendAssetPath = buildAssetPath(assetBaseDir, backendLibraryName)
+            if (!assetExists(backendAssetPath)) {
+                return null
+            }
+            val installRoot = File(appContext.filesDir, assetBaseDir)
+            if (!installRoot.exists()) {
+                installRoot.mkdirs()
+            }
+            PackagedLibraryTarget(
+                loadTarget = copyAssetToFile(
+                    backendAssetPath,
+                    File(installRoot, backendLibraryName)
+                ).absolutePath
+            )
+        } ?: return null
 
-        val delegateFile = copyAssetToFile(delegateAssetPath, File(installRoot, delegateLibraryName))
-        val backendFile = copyAssetToFile(backendAssetPath, File(installRoot, backendLibraryName))
-        val skelDir = File(installRoot, skelAssetSubDir)
-        copyAssetDirectory(skelAssetPath, skelDir)
+        val skelDir = if (!preferPackagedNativeLibraries && assetExists(skelAssetPath)) {
+            val installRoot = File(appContext.filesDir, assetBaseDir)
+            if (!installRoot.exists()) {
+                installRoot.mkdirs()
+            }
+            File(installRoot, skelAssetSubDir).also { copyAssetDirectory(skelAssetPath, it) }
+        } else {
+            nativeLibraryDir
+        } ?: return null
 
         return QnnPreparedAssets(
-            delegateLibraryPath = delegateFile.absolutePath,
-            backendLibraryPath = backendFile.absolutePath,
-            skelLibraryDir = skelDir.absolutePath
+            delegateLibraryPath = delegateTarget.loadTarget,
+            backendLibraryPath = backendTarget.loadTarget,
+            skelLibraryDir = skelDir.absolutePath,
+            usingPackagedNativeLibraries = preferPackagedNativeLibraries
         )
     }
 
     fun assetExists(assetPath: String): Boolean {
         return runCatching { appContext.assets.open(assetPath).close() }.isSuccess ||
             runCatching { appContext.assets.list(assetPath)?.isNotEmpty() == true }.getOrDefault(false)
+    }
+
+    fun packagedLibraryExists(libraryName: String): Boolean {
+        return resolvePackagedLibrary(libraryName) != null
+    }
+
+    fun nativeLibraryDirPath(): String? {
+        return appContext.applicationInfo.nativeLibraryDir
     }
 
     private fun copyAssetDirectory(assetDir: String, targetDir: File) {
@@ -81,10 +123,62 @@ class QnnAssetInstaller(
     private fun buildAssetPath(base: String, child: String): String {
         return if (base.isEmpty()) child else "$base/$child"
     }
+
+    private fun resolvePackagedLibrary(libraryName: String): PackagedLibraryTarget? {
+        val nativeLibraryDir = nativeLibraryDirPath()?.let(::File)
+        val extractedFile = nativeLibraryDir?.let { File(it, libraryName) }?.takeIf { it.exists() }
+        if (extractedFile != null) {
+            return PackagedLibraryTarget(
+                loadTarget = extractedFile.absolutePath
+            )
+        }
+
+        val apkContainsLibrary = packagedLibraryEntries(libraryName).isNotEmpty()
+        if (!apkContainsLibrary) {
+            return null
+        }
+
+        return PackagedLibraryTarget(
+            loadTarget = libraryName
+        )
+    }
+
+    private fun packagedLibraryEntries(libraryName: String): List<String> {
+        val packageCodePaths = buildList {
+            add(appContext.applicationInfo.sourceDir)
+            appContext.applicationInfo.splitSourceDirs?.let(::addAll)
+        }.filterNotNull()
+
+        val candidateEntries = supportedAbis().map { abi -> "lib/$abi/$libraryName" }.toSet()
+        val matches = mutableListOf<String>()
+
+        packageCodePaths.forEach { apkPath ->
+            runCatching {
+                ZipFile(apkPath).use { zip ->
+                    candidateEntries.forEach { entry ->
+                        if (zip.getEntry(entry) != null) {
+                            matches += "$apkPath!/$entry"
+                        }
+                    }
+                }
+            }
+        }
+
+        return matches
+    }
+
+    private fun supportedAbis(): List<String> {
+        return Build.SUPPORTED_ABIS?.filterNotNull()?.filter { it.isNotBlank() }.orEmpty()
+    }
 }
 
 data class QnnPreparedAssets(
     val delegateLibraryPath: String,
     val backendLibraryPath: String,
-    val skelLibraryDir: String
+    val skelLibraryDir: String,
+    val usingPackagedNativeLibraries: Boolean
+)
+
+private data class PackagedLibraryTarget(
+    val loadTarget: String
 )
